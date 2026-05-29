@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "luma-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "REPLACE_WITH_CLOUDFLARE_KV_NAMESPACE_ID"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "triggers": {
+    "crons": ["17 */6 * * *"]
+  }
+}
