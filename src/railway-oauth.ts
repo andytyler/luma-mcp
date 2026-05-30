@@ -5,11 +5,9 @@ import { OAuthClientMetadataSchema } from "@modelcontextprotocol/sdk/shared/auth
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import {
   buildAuthorizationProps,
-  clearCsrfCookie,
-  createCsrfCookie,
   escapeHtml,
   LUMA_OAUTH_SCOPES,
-  readCsrfCookie,
+  parseLumaScopes,
   renderAuthorizePage,
   type AuthorizationProps,
 } from "./auth";
@@ -57,6 +55,10 @@ type AuthorizationParams = {
   resource?: string;
 };
 
+type AuthorizationParamsResult =
+  | { ok: true; value: AuthorizationParams }
+  | { ok: false; error: "invalid_request" | "invalid_scope"; message: string };
+
 type StoredAuthorizationCode = {
   code: string;
   clientId: string;
@@ -76,13 +78,14 @@ type StoredToken = {
   expiresAt: number;
 };
 
-type CsrfState = {
-  clientId: string;
-  redirectUri: string;
-  codeChallenge: string;
-  state?: string;
-  resource?: string;
+type TokenGrant = Omit<StoredToken, "expiresAt">;
+
+type CsrfState = AuthorizationParams & {
   expiresAt: number;
+};
+
+type FormFields = {
+  get(name: string): unknown;
 };
 
 export type RailwayOAuthOptions = {
@@ -204,9 +207,13 @@ export class RailwayOAuthServer {
   }
 
   async authorize(request: Request, baseUrl: URL): Promise<Response> {
-    const params = await parseAuthorizationParams(request);
+    if (request.method === "POST") {
+      return this.completeAuthorizeForm(request, baseUrl);
+    }
+
+    const params = parseAuthorizationParams(new URL(request.url).searchParams);
     if (!params.ok) {
-      return oauthJsonError("invalid_request", params.message, 400);
+      return oauthJsonError(params.error, params.message, 400);
     }
 
     const client = this.getClient(params.value.clientId);
@@ -231,11 +238,7 @@ export class RailwayOAuthServer {
       );
     }
 
-    if (request.method === "GET") {
-      return this.renderAuthorizeForm(client, params.value);
-    }
-
-    return this.completeAuthorizeForm(request, client, params.value, baseUrl);
+    return this.renderAuthorizeForm(client, params.value, baseUrl);
   }
 
   async token(request: Request): Promise<Response> {
@@ -275,10 +278,15 @@ export class RailwayOAuthServer {
     return new Response(null, { status: 200 });
   }
 
-  async verifyAccessToken(token: string): Promise<AuthInfo> {
+  async verifyAccessToken(token: string, expectedResource?: URL): Promise<AuthInfo> {
     const row = this.getTokenRow("oauth_access_tokens", await hashSecret(token));
     if (!row || row.expiresAt < epochSeconds()) {
       throw new Error("Invalid or expired access token.");
+    }
+
+    const resource = row.resource ? new URL(row.resource) : undefined;
+    if (expectedResource && resource && resource.href !== expectedResource.href) {
+      throw new Error("Access token was issued for a different OAuth resource.");
     }
 
     return {
@@ -286,7 +294,7 @@ export class RailwayOAuthServer {
       clientId: row.clientId,
       scopes: row.scope,
       expiresAt: row.expiresAt,
-      resource: row.resource ? new URL(row.resource) : undefined,
+      resource,
       extra: await this.decryptProps(row.propsCipher),
     };
   }
@@ -366,14 +374,12 @@ export class RailwayOAuthServer {
   private async renderAuthorizeForm(
     client: RegisteredClient,
     params: AuthorizationParams,
+    baseUrl: URL,
   ): Promise<Response> {
     const csrfToken = crypto.randomUUID();
+    const scriptNonce = base64Url(crypto.getRandomValues(new Uint8Array(16)));
     const csrfState: CsrfState = {
-      clientId: params.clientId,
-      redirectUri: params.redirectUri,
-      codeChallenge: params.codeChallenge,
-      state: params.state,
-      resource: params.resource,
+      ...params,
       expiresAt: epochSeconds() + CSRF_TTL_SECONDS,
     };
 
@@ -382,42 +388,36 @@ export class RailwayOAuthServer {
       [await hashSecret(csrfToken), JSON.stringify(csrfState), csrfState.expiresAt],
     );
 
-    const body = addHiddenOauthFields(
-      renderAuthorizePage({
-        csrfToken,
-        clientName: client.client_name ?? client.client_id,
-        logoUri: client.logo_uri,
-        scopes: params.scope.length > 0 ? params.scope : [...LUMA_OAUTH_SCOPES],
-      }),
-      params,
-    );
+    const body = renderAuthorizePage({
+      csrfToken,
+      clientName: client.client_name ?? client.client_id,
+      logoUri: client.logo_uri,
+      scriptNonce,
+      scopes: params.scope.length > 0 ? params.scope : [...LUMA_OAUTH_SCOPES],
+    });
 
-    return htmlResponse(body, 200, createCsrfCookie(csrfToken, CSRF_TTL_SECONDS));
+    return htmlResponse(body, 200, {
+      formActionOrigin: isLoopbackHost(baseUrl.hostname) ? undefined : baseUrl.origin,
+      scriptNonce,
+    });
   }
 
   private async completeAuthorizeForm(
     request: Request,
-    client: RegisteredClient,
-    params: AuthorizationParams,
     baseUrl: URL,
   ): Promise<Response> {
     const form = await request.clone().formData();
     const csrfToken = stringFormValue(form.get("csrf_token"));
-    const cookieCsrfToken = readCsrfCookie(request);
     const csrfHash = csrfToken ? await hashSecret(csrfToken) : "";
     const csrfState = csrfHash ? this.getCsrfState(csrfHash) : undefined;
 
-    if (
-      !csrfToken ||
-      !cookieCsrfToken ||
-      csrfToken !== cookieCsrfToken ||
-      !csrfState ||
-      csrfState.expiresAt < epochSeconds() ||
-      csrfState.clientId !== params.clientId ||
-      csrfState.redirectUri !== params.redirectUri ||
-      csrfState.codeChallenge !== params.codeChallenge ||
-      csrfState.resource !== params.resource
-    ) {
+    if (!csrfToken || !csrfState || csrfState.expiresAt < epochSeconds()) {
+      return htmlResponse(errorPage("Authorization expired. Start the connection again."), 400);
+    }
+
+    const params: AuthorizationParams = csrfState;
+    const client = this.getClient(params.clientId);
+    if (!client || !client.redirect_uris.includes(params.redirectUri)) {
       return htmlResponse(errorPage("Authorization expired. Start the connection again."), 400);
     }
 
@@ -431,7 +431,6 @@ export class RailwayOAuthServer {
       return htmlResponse(
         errorPage(`Luma rejected that API key. ${validation.message}`),
         401,
-        clearCsrfCookie(),
       );
     }
 
@@ -459,7 +458,6 @@ export class RailwayOAuthServer {
       status: 302,
       headers: {
         location: target.href,
-        "set-cookie": clearCsrfCookie(),
       },
     });
   }
@@ -491,7 +489,7 @@ export class RailwayOAuthServer {
 
   private async authenticateClient(
     request: Request,
-    form: FormData,
+    form: FormFields,
   ): Promise<{ ok: true; value: RegisteredClient } | { ok: false; message: string }> {
     const basicClient = parseBasicAuth(request.headers.get("authorization"));
     const clientId = basicClient?.clientId ?? stringFormValue(form.get("client_id"));
@@ -534,13 +532,13 @@ export class RailwayOAuthServer {
 
   private async exchangeAuthorizationCode(
     client: RegisteredClient,
-    form: FormData,
+    form: FormFields,
   ): Promise<Response> {
     const code = stringFormValue(form.get("code"));
     const codeVerifier = stringFormValue(form.get("code_verifier"));
     const redirectUri = stringFormValue(form.get("redirect_uri"));
     const requestedResource = stringFormValue(form.get("resource"));
-    const stored = this.getAuthorizationCode(code);
+    const stored = this.consumeAuthorizationCode(code);
 
     if (!stored || stored.expiresAt < epochSeconds()) {
       return oauthJsonError("invalid_grant", "Invalid or expired authorization code.", 400);
@@ -562,40 +560,31 @@ export class RailwayOAuthServer {
       return oauthJsonError("invalid_grant", "code_verifier does not match the challenge.", 400);
     }
 
-    this.db.run("delete from oauth_authorization_codes where code = ?", [code]);
-    const accessToken = randomToken();
+    const tokenGrant: TokenGrant = {
+      clientId: client.client_id,
+      scope: stored.scope,
+      resource: stored.resource,
+      propsCipher: stored.propsCipher,
+    };
+    const accessToken = await this.issueAccessToken(tokenGrant);
     const refreshToken = randomToken();
-    const now = epochSeconds();
-    await this.storeToken("oauth_access_tokens", accessToken, {
-      clientId: client.client_id,
-      scope: stored.scope,
-      resource: stored.resource,
-      propsCipher: stored.propsCipher,
-      expiresAt: now + ACCESS_TOKEN_TTL_SECONDS,
-    });
     await this.storeToken("oauth_refresh_tokens", refreshToken, {
-      clientId: client.client_id,
-      scope: stored.scope,
-      resource: stored.resource,
-      propsCipher: stored.propsCipher,
-      expiresAt: now + REFRESH_TOKEN_TTL_SECONDS,
+      ...tokenGrant,
+      expiresAt: epochSeconds() + REFRESH_TOKEN_TTL_SECONDS,
     });
 
-    return jsonResponse({
-      access_token: accessToken,
-      token_type: "bearer",
-      expires_in: ACCESS_TOKEN_TTL_SECONDS,
-      refresh_token: refreshToken,
-      scope: stored.scope.join(" "),
-    });
+    return tokenResponse(accessToken, refreshToken, stored.scope);
   }
 
   private async exchangeRefreshToken(
     client: RegisteredClient,
-    form: FormData,
+    form: FormFields,
   ): Promise<Response> {
     const refreshToken = stringFormValue(form.get("refresh_token"));
-    const requestedScope = splitScope(stringFormValue(form.get("scope")));
+    const requestedScope = parseLumaScopes(stringFormValue(form.get("scope")), "optional");
+    if (!requestedScope.ok) {
+      return oauthJsonError("invalid_scope", requestedScope.message, 400);
+    }
     const requestedResource = stringFormValue(form.get("resource"));
     const stored = this.getTokenRow("oauth_refresh_tokens", await hashSecret(refreshToken));
 
@@ -611,26 +600,26 @@ export class RailwayOAuthServer {
       return oauthJsonError("invalid_target", "resource does not match the refresh token.", 400);
     }
 
-    const scope =
-      requestedScope.length > 0
-        ? requestedScope.filter((scope) => stored.scope.includes(scope))
-        : stored.scope;
-    const accessToken = randomToken();
-    await this.storeToken("oauth_access_tokens", accessToken, {
+    const unauthorizedScopes = requestedScope.value.filter((scope) =>
+      !stored.scope.includes(scope),
+    );
+    if (unauthorizedScopes.length > 0) {
+      return oauthJsonError(
+        "invalid_scope",
+        `Refresh token was not granted OAuth scope(s): ${unauthorizedScopes.join(", ")}`,
+        400,
+      );
+    }
+
+    const scope = requestedScope.value.length > 0 ? requestedScope.value : stored.scope;
+    const accessToken = await this.issueAccessToken({
       clientId: client.client_id,
       scope,
       resource: stored.resource,
       propsCipher: stored.propsCipher,
-      expiresAt: epochSeconds() + ACCESS_TOKEN_TTL_SECONDS,
     });
 
-    return jsonResponse({
-      access_token: accessToken,
-      token_type: "bearer",
-      expires_in: ACCESS_TOKEN_TTL_SECONDS,
-      refresh_token: refreshToken,
-      scope: scope.join(" "),
-    });
+    return tokenResponse(accessToken, refreshToken, scope);
   }
 
   private getAuthorizationCode(code: string): StoredAuthorizationCode | undefined {
@@ -664,6 +653,30 @@ export class RailwayOAuthServer {
           expiresAt: row.expires_at,
         }
       : undefined;
+  }
+
+  private consumeAuthorizationCode(code: string): StoredAuthorizationCode | undefined {
+    this.db.run("begin immediate");
+    try {
+      const stored = this.getAuthorizationCode(code);
+      if (stored) {
+        this.db.run("delete from oauth_authorization_codes where code = ?", [code]);
+      }
+      this.db.run("commit");
+      return stored;
+    } catch (error) {
+      this.db.run("rollback");
+      throw error;
+    }
+  }
+
+  private async issueAccessToken(grant: TokenGrant): Promise<string> {
+    const accessToken = randomToken();
+    await this.storeToken("oauth_access_tokens", accessToken, {
+      ...grant,
+      expiresAt: epochSeconds() + ACCESS_TOKEN_TTL_SECONDS,
+    });
+    return accessToken;
   }
 
   private async storeToken(
@@ -738,7 +751,11 @@ export class RailwayOAuthServer {
   }
 }
 
-export function jsonResponse(value: unknown, status = 200, headers?: HeadersInit): Response {
+export function jsonResponse(
+  value: unknown,
+  status = 200,
+  headers?: Record<string, string>,
+): Response {
   const responseHeaders = new Headers(headers);
   responseHeaders.set("content-type", "application/json; charset=utf-8");
   responseHeaders.set("cache-control", "no-store");
@@ -759,6 +776,16 @@ export function oauthJsonError(error: string, description: string, status: numbe
   );
 }
 
+function tokenResponse(accessToken: string, refreshToken: string, scope: string[]): Response {
+  return jsonResponse({
+    access_token: accessToken,
+    token_type: "bearer",
+    expires_in: ACCESS_TOKEN_TTL_SECONDS,
+    refresh_token: refreshToken,
+    scope: scope.join(" "),
+  });
+}
+
 export function bearerError(baseUrl: URL, description = "Missing or invalid access token."): Response {
   return jsonResponse(
     {
@@ -767,31 +794,40 @@ export function bearerError(baseUrl: URL, description = "Missing or invalid acce
     },
     401,
     {
-    "www-authenticate": `Bearer error="invalid_token", error_description="${headerEscape(
-      description,
-    )}", resource_metadata="${new URL("/.well-known/oauth-protected-resource/mcp", baseUrl).href}"`,
+      "www-authenticate": `Bearer error="invalid_token", error_description="${headerEscape(
+        description,
+      )}", resource_metadata="${new URL("/.well-known/oauth-protected-resource/mcp", baseUrl).href}"`,
     },
   );
 }
 
-function htmlResponse(html: string, status = 200, setCookie?: string): Response {
+function htmlResponse(
+  html: string,
+  status = 200,
+  options: { formActionOrigin?: string; scriptNonce?: string } = {},
+): Response {
+  const contentSecurityPolicy = [
+    "default-src 'none'",
+    "style-src 'unsafe-inline'",
+    "img-src https:",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+  ];
+  if (options.formActionOrigin) {
+    contentSecurityPolicy.push(
+      ["form-action", "'self'", options.formActionOrigin].filter(Boolean).join(" "),
+    );
+  }
+  if (options.scriptNonce) {
+    contentSecurityPolicy.push(`script-src 'nonce-${options.scriptNonce}'`);
+  }
+
   const headers = new Headers({
     "content-type": "text/html; charset=utf-8",
-    "content-security-policy": [
-      "default-src 'none'",
-      "style-src 'unsafe-inline'",
-      "img-src https:",
-      "form-action 'self'",
-      "frame-ancestors 'none'",
-      "base-uri 'self'",
-    ].join("; "),
+    "content-security-policy": contentSecurityPolicy.join("; "),
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
   });
-
-  if (setCookie) {
-    headers.set("set-cookie", setCookie);
-  }
 
   return new Response(html, { status, headers });
 }
@@ -813,36 +849,35 @@ function errorPage(message: string): string {
 </html>`;
 }
 
-async function parseAuthorizationParams(
-  request: Request,
-): Promise<{ ok: true; value: AuthorizationParams } | { ok: false; message: string }> {
-  const values =
-    request.method === "POST"
-      ? await request.clone().formData()
-      : new URL(request.url).searchParams;
+function parseAuthorizationParams(values: URLSearchParams): AuthorizationParamsResult {
   const clientId = stringFormValue(values.get("client_id"));
   const redirectUri = stringFormValue(values.get("redirect_uri"));
   const responseType = stringFormValue(values.get("response_type"));
   const codeChallenge = stringFormValue(values.get("code_challenge"));
   const codeChallengeMethod = stringFormValue(values.get("code_challenge_method"));
-  const scope = splitScope(stringFormValue(values.get("scope")));
+  const scope = parseLumaScopes(stringFormValue(values.get("scope")), "default-all");
   const state = stringFormValue(values.get("state")) || undefined;
   const resource = stringFormValue(values.get("resource")) || undefined;
+
+  if (!scope.ok) {
+    return { ok: false, error: "invalid_scope", message: scope.message };
+  }
 
   if (!clientId || !redirectUri || !responseType || !codeChallenge || !codeChallengeMethod) {
     return {
       ok: false,
+      error: "invalid_request",
       message:
         "client_id, redirect_uri, response_type, code_challenge, and code_challenge_method are required.",
     };
   }
 
   if (!canParseUrl(redirectUri)) {
-    return { ok: false, message: "redirect_uri must be a valid URL." };
+    return { ok: false, error: "invalid_request", message: "redirect_uri must be a valid URL." };
   }
 
   if (resource && !canParseUrl(resource)) {
-    return { ok: false, message: "resource must be a valid URL." };
+    return { ok: false, error: "invalid_request", message: "resource must be a valid URL." };
   }
 
   return {
@@ -853,32 +888,11 @@ async function parseAuthorizationParams(
       responseType,
       codeChallenge,
       codeChallengeMethod,
-      scope,
+      scope: scope.value,
       state,
       resource,
     },
   };
-}
-
-function addHiddenOauthFields(html: string, params: AuthorizationParams): string {
-  const hiddenFields = [
-    ["client_id", params.clientId],
-    ["redirect_uri", params.redirectUri],
-    ["response_type", params.responseType],
-    ["code_challenge", params.codeChallenge],
-    ["code_challenge_method", params.codeChallengeMethod],
-    ["scope", params.scope.join(" ")],
-    ["state", params.state ?? ""],
-    ["resource", params.resource ?? ""],
-  ]
-    .filter(([, value]) => value)
-    .map(
-      ([name, value]) =>
-        `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}" />`,
-    )
-    .join("");
-
-  return html.replace('<input type="hidden" name="csrf_token"', `${hiddenFields}<input type="hidden" name="csrf_token"`);
 }
 
 function redirectOAuthError(
@@ -896,19 +910,6 @@ function redirectOAuthError(
     target.searchParams.set("state", state);
   }
   return Response.redirect(target.href, 302);
-}
-
-function splitScope(scope: string): string[] {
-  if (!scope) {
-    return [...LUMA_OAUTH_SCOPES];
-  }
-
-  const allowed = new Set<string>(LUMA_OAUTH_SCOPES);
-  const requested = scope
-    .split(/\s+/)
-    .map((item) => item.trim())
-    .filter((item) => item && allowed.has(item));
-  return requested.length > 0 ? requested : [...LUMA_OAUTH_SCOPES];
 }
 
 function stringFormValue(value: unknown): string {
@@ -962,10 +963,15 @@ function base64Url(bytes: Uint8Array): string {
     .replace(/=+$/g, "");
 }
 
-function fromBase64Url(value: string): Uint8Array {
+function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-  return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }
 
 async function constantTimeEqual(left: string, right: string): Promise<boolean> {
@@ -996,4 +1002,8 @@ function canParseUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
 }

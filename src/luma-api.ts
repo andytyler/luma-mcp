@@ -1,4 +1,5 @@
 const LUMA_API_BASE_URL = "https://public-api.luma.com";
+const DEFAULT_LUMA_VALIDATION_TIMEOUT_MS = 10_000;
 
 export type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 export type QueryValue = string | number | boolean | null | undefined;
@@ -10,12 +11,16 @@ export type LumaRequestOptions = {
   query?: QueryParams;
   body?: unknown;
   method?: "GET" | "POST";
+  timeoutMs?: number;
 };
 
 export type LumaApiKeyType = "calendar" | "organization";
 export type LumaValidationResult =
   | { ok: true; keyType: LumaApiKeyType }
   | { ok: false; status: number; message: string };
+export type LumaValidationOptions = {
+  timeoutMs?: number;
+};
 
 export function buildLumaUrl(path: string, query: QueryParams = {}): URL {
   const url = new URL(validateLumaPath(path), LUMA_API_BASE_URL);
@@ -43,8 +48,25 @@ export function validateLumaPath(path: string): string {
     throw new Error("Luma path must be a relative /v1/ path");
   }
 
-  if (path.includes("://") || path.includes("..")) {
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(path);
+  } catch {
+    throw new Error("Luma path cannot contain malformed URL escapes");
+  }
+
+  if (
+    path.includes("://") ||
+    path.includes("..") ||
+    decodedPath.includes("://") ||
+    decodedPath.includes("..")
+  ) {
     throw new Error("Luma path cannot contain path traversal or absolute URLs");
+  }
+
+  const url = new URL(path, LUMA_API_BASE_URL);
+  if (url.origin !== LUMA_API_BASE_URL || !url.pathname.startsWith("/v1/")) {
+    throw new Error("Luma path must stay under /v1/");
   }
 
   return path;
@@ -60,17 +82,30 @@ export async function lumaRequest(
     "x-luma-api-key": options.apiKey,
   });
 
-  let body: BodyInit | undefined;
+  let body: string | undefined;
   if (options.body !== undefined) {
     headers.set("content-type", "application/json");
     body = JSON.stringify(options.body);
   }
 
-  const response = await fetcher(buildLumaUrl(options.path, options.query), {
-    method,
-    headers,
-    body,
-  });
+  const timeout = createTimeoutController(options.timeoutMs, options.path);
+
+  let response: Response;
+  try {
+    response = await fetcher(buildLumaUrl(options.path, options.query), {
+      method,
+      headers,
+      body,
+      signal: timeout.controller?.signal,
+    });
+  } catch (error) {
+    if (timeout.controller?.signal.aborted) {
+      throw timeout.controller.signal.reason;
+    }
+    throw error;
+  } finally {
+    timeout.clear();
+  }
 
   const text = await response.text();
   const data = parseJson(text);
@@ -88,6 +123,7 @@ export async function lumaRequest(
 export async function validateLumaApiKey(
   apiKey: string,
   fetcher: Fetcher = fetch,
+  options: LumaValidationOptions = {},
 ): Promise<LumaValidationResult> {
   const probes: Array<{ keyType: LumaApiKeyType; path: string; query: QueryParams }> = [
     {
@@ -104,7 +140,12 @@ export async function validateLumaApiKey(
   let lastFailure: LumaValidationResult | undefined;
 
   for (const probe of probes) {
-    const result = await validateLumaApiKeyAgainstProbe(apiKey, probe, fetcher);
+    const result = await validateLumaApiKeyAgainstProbe(
+      apiKey,
+      probe,
+      fetcher,
+      options.timeoutMs ?? DEFAULT_LUMA_VALIDATION_TIMEOUT_MS,
+    );
     if (result.ok) {
       return result;
     }
@@ -118,6 +159,7 @@ async function validateLumaApiKeyAgainstProbe(
   apiKey: string,
   probe: { keyType: LumaApiKeyType; path: string; query: QueryParams },
   fetcher: Fetcher,
+  timeoutMs: number,
 ): Promise<LumaValidationResult> {
   try {
     await lumaRequest(
@@ -125,6 +167,7 @@ async function validateLumaApiKeyAgainstProbe(
         apiKey,
         path: probe.path,
         query: probe.query,
+        timeoutMs,
       },
       fetcher,
     );
@@ -134,7 +177,7 @@ async function validateLumaApiKeyAgainstProbe(
     const statusMatch = message.match(/failed with (\d{3})/);
     return {
       ok: false,
-      status: statusMatch ? Number(statusMatch[1]) : 500,
+      status: message.includes("timed out") ? 504 : statusMatch ? Number(statusMatch[1]) : 500,
       message,
     };
   }
@@ -158,4 +201,23 @@ function parseJson(text: string): unknown {
   } catch {
     return undefined;
   }
+}
+
+function createTimeoutController(
+  timeoutMs: number | undefined,
+  path: string,
+): { controller?: AbortController; clear: () => void } {
+  if (!timeoutMs || timeoutMs <= 0) {
+    return { clear: () => {} };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort(new Error(`Luma API request to ${path} timed out after ${timeoutMs}ms`));
+  }, timeoutMs);
+
+  return {
+    controller,
+    clear: () => clearTimeout(timeoutId),
+  };
 }

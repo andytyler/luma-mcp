@@ -17,7 +17,7 @@ export async function handleMcpRequest(
 
 export function makeAuthInfo(props: Record<string, unknown> | undefined): AuthInfo {
   return {
-    token: "managed-by-workers-oauth-provider",
+    token: "managed-by-railway-oauth",
     clientId: "registered-mcp-client",
     scopes: extractScopes(props),
     extra: props ?? {},

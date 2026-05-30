@@ -1,11 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
-  createCsrfCookie,
   escapeHtml,
   hashApiKey,
   renderAuthorizePage,
   buildAuthorizationProps,
-  parseCookies,
   sanitizeHttpUrl,
 } from "../src/auth";
 
@@ -22,25 +20,6 @@ describe("auth helpers", () => {
     );
     expect(sanitizeHttpUrl("javascript:alert(1)")).toBe("");
     expect(sanitizeHttpUrl("not a url")).toBe("");
-  });
-
-  test("createCsrfCookie uses a host-only secure cookie", () => {
-    const cookie = createCsrfCookie("token-123", 600);
-
-    expect(cookie).toContain("__Host-luma_mcp_csrf=token-123");
-    expect(cookie).toContain("HttpOnly");
-    expect(cookie).toContain("Secure");
-    expect(cookie).toContain("Path=/");
-    expect(cookie).toContain("SameSite=Lax");
-    expect(cookie).toContain("Max-Age=600");
-  });
-
-  test("parseCookies handles spaces and encoded values", () => {
-    expect(parseCookies("a=1; theme=light%20mode; empty=")).toEqual({
-      a: "1",
-      theme: "light mode",
-      empty: "",
-    });
   });
 
   test("hashApiKey produces a stable non-secret user id suffix", async () => {
@@ -64,8 +43,21 @@ describe("auth helpers", () => {
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("javascript:alert");
     expect(html).toContain('name="csrf_token" value="csrf-123"');
+    expect(html).toContain("Luma calendar or organization API key");
     expect(html).toContain("luma.events.read");
     expect(html).toContain("luma.events.write");
+  });
+
+  test("renderAuthorizePage guards against duplicate authorization submits", () => {
+    const html = renderAuthorizePage({
+      csrfToken: "csrf-123",
+      scriptNonce: "test-nonce",
+    });
+
+    expect(html).toContain('data-authorize-form="true"');
+    expect(html).toContain('<script nonce="test-nonce">');
+    expect(html).toContain("button.disabled = true");
+    expect(html).toContain("Authorizing...");
   });
 
   test("buildAuthorizationProps keeps secrets in props and non-secrets in grant metadata", async () => {
@@ -83,5 +75,12 @@ describe("auth helpers", () => {
 
     expect(result.scope).toEqual(["luma.events.read"]);
     expect(result.props.scopes).toEqual(["luma.events.read"]);
+  });
+
+  test("buildAuthorizationProps does not broaden unsupported requested scopes", async () => {
+    const result = await buildAuthorizationProps("luma-secret-key", ["luma.admin"]);
+
+    expect(result.scope).toEqual([]);
+    expect(result.props.scopes).toEqual([]);
   });
 });

@@ -1,5 +1,9 @@
-const CSRF_COOKIE_NAME = "__Host-luma_mcp_csrf";
 export const LUMA_OAUTH_SCOPES = ["luma.events.read", "luma.events.write"] as const;
+
+export type LumaScopeParseMode = "default-all" | "optional";
+export type LumaScopeParseResult =
+  | { ok: true; value: string[] }
+  | { ok: false; message: string };
 
 export type AuthorizationProps = {
   userId: string;
@@ -20,6 +24,7 @@ export type AuthorizePageOptions = {
   csrfToken: string;
   clientName?: string;
   logoUri?: string;
+  scriptNonce?: string;
   scopes?: string[];
 };
 
@@ -45,41 +50,6 @@ export function sanitizeHttpUrl(value: string | undefined): string {
   }
 }
 
-export function createCsrfCookie(token: string, maxAgeSeconds: number): string {
-  return `${CSRF_COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
-}
-
-export function clearCsrfCookie(): string {
-  return `${CSRF_COOKIE_NAME}=; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=0`;
-}
-
-export function readCsrfCookie(request: Request): string | undefined {
-  return parseCookies(request.headers.get("cookie") ?? "")[CSRF_COOKIE_NAME];
-}
-
-export function parseCookies(cookieHeader: string): Record<string, string> {
-  const cookies: Record<string, string> = {};
-
-  for (const part of cookieHeader.split(";")) {
-    const trimmed = part.trim();
-    if (!trimmed) {
-      continue;
-    }
-
-    const equalsIndex = trimmed.indexOf("=");
-    if (equalsIndex === -1) {
-      cookies[trimmed] = "";
-      continue;
-    }
-
-    const key = trimmed.slice(0, equalsIndex);
-    const value = trimmed.slice(equalsIndex + 1);
-    cookies[key] = decodeURIComponent(value);
-  }
-
-  return cookies;
-}
-
 export async function hashApiKey(apiKey: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -100,6 +70,28 @@ export function renderAuthorizePage(options: AuthorizePageOptions): string {
 
   const logo = logoUri
     ? `<img src="${escapeHtml(logoUri)}" alt="" class="client-logo" />`
+    : "";
+  const submitScript = options.scriptNonce
+    ? `<script nonce="${escapeHtml(options.scriptNonce)}">
+      (() => {
+        const form = document.querySelector('[data-authorize-form="true"]');
+        if (!form) return;
+
+        form.addEventListener("submit", (event) => {
+          if (form.dataset.submitted === "true") {
+            event.preventDefault();
+            return;
+          }
+
+          form.dataset.submitted = "true";
+          const button = form.querySelector('button[type="submit"]');
+          if (button instanceof HTMLButtonElement) {
+            button.disabled = true;
+            button.textContent = "Authorizing...";
+          }
+        });
+      })();
+    </script>`
     : "";
 
   return `<!doctype html>
@@ -170,9 +162,9 @@ export function renderAuthorizePage(options: AuthorizePageOptions): string {
     <main>
       <div class="client">${logo}<strong>${clientName}</strong></div>
       <h1>Connect Luma to your MCP client</h1>
-      <p>Paste a Luma calendar API key. It will be stored only inside encrypted OAuth token props for this MCP grant.</p>
+      <p>Paste a Luma calendar or organization API key. It will be stored only inside encrypted OAuth token props for this MCP grant.</p>
       <ul>${scopes}</ul>
-      <form method="post" action="/authorize">
+      <form method="post" action="/authorize" data-authorize-form="true">
         <input type="hidden" name="csrf_token" value="${escapeHtml(options.csrfToken)}" />
         <label>
           Luma API key
@@ -180,8 +172,9 @@ export function renderAuthorizePage(options: AuthorizePageOptions): string {
         </label>
         <button type="submit">Authorize</button>
       </form>
-      <p class="hint">Luma API keys are calendar-scoped and require Luma Plus on that calendar.</p>
+      <p class="hint">Use a key for the calendar or organization this MCP server should manage.</p>
     </main>
+    ${submitScript}
   </body>
 </html>`;
 }
@@ -210,8 +203,41 @@ export async function buildAuthorizationProps(
   };
 }
 
+export function parseLumaScopes(
+  scopeText: string,
+  mode: LumaScopeParseMode,
+): LumaScopeParseResult {
+  if (!scopeText.trim()) {
+    return {
+      ok: true,
+      value: mode === "default-all" ? [...LUMA_OAUTH_SCOPES] : [],
+    };
+  }
+
+  const requestedScopes = [
+    ...new Set(
+      scopeText
+        .split(/\s+/)
+        .map((scope) => scope.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const allowed = new Set<string>(LUMA_OAUTH_SCOPES);
+  const unsupportedScopes = requestedScopes.filter((scope) => !allowed.has(scope));
+  if (unsupportedScopes.length > 0) {
+    return {
+      ok: false,
+      message: `Unsupported OAuth scope(s): ${unsupportedScopes.join(", ")}`,
+    };
+  }
+
+  return { ok: true, value: requestedScopes };
+}
+
 function normalizeScopes(requestedScopes: string[]): string[] {
   const allowed = new Set<string>(LUMA_OAUTH_SCOPES);
-  const requestedAllowed = requestedScopes.filter((scope) => allowed.has(scope));
-  return requestedAllowed.length > 0 ? requestedAllowed : [...LUMA_OAUTH_SCOPES];
+  const requestedAllowed = requestedScopes
+    .map((scope) => scope.trim())
+    .filter((scope) => scope && allowed.has(scope));
+  return [...new Set(requestedAllowed)];
 }

@@ -26,7 +26,7 @@ describe("Luma API helpers", () => {
   test("lumaRequest sends the per-user API key header", async () => {
     const calls: Request[] = [];
     const fetcher: Fetcher = async (input, init) => {
-      const request = new Request(input, init);
+      const request = makeRequest(input, init);
       calls.push(request);
       return Response.json({ ok: true });
     };
@@ -66,7 +66,7 @@ describe("Luma API helpers", () => {
   test("validateLumaApiKey checks a low-cost calendar endpoint", async () => {
     const calls: Request[] = [];
     const fetcher: Fetcher = async (input, init) => {
-      const request = new Request(input, init);
+      const request = makeRequest(input, init);
       calls.push(request);
       return Response.json({ entries: [] });
     };
@@ -83,7 +83,7 @@ describe("Luma API helpers", () => {
   test("validateLumaApiKey falls back to organization endpoint for organization keys", async () => {
     const calls: Request[] = [];
     const fetcher: Fetcher = async (input, init) => {
-      const request = new Request(input, init);
+      const request = makeRequest(input, init);
       calls.push(request);
       if (calls.length === 1) {
         return Response.json({ message: "Calendar endpoint unavailable" }, { status: 403 });
@@ -100,6 +100,24 @@ describe("Luma API helpers", () => {
     ]);
   });
 
+  test("validateLumaApiKey times out stalled validation probes", async () => {
+    const fetcher: Fetcher = async (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(init.signal?.reason ?? new Error("aborted"));
+        });
+      });
+
+    const result = await validateLumaApiKey("stalled-key", fetcher, { timeoutMs: 5 });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("Expected Luma validation to time out");
+    }
+    expect(result.status).toBe(504);
+    expect(result.message).toContain("timed out");
+  });
+
   test("validateLumaPath only allows relative v1 API paths", () => {
     expect(validateLumaPath("/v1/event/update")).toBe("/v1/event/update");
     expect(() => validateLumaPath("https://evil.example/v1/event/update")).toThrow(
@@ -111,6 +129,9 @@ describe("Luma API helpers", () => {
     expect(() => validateLumaPath("/v1/../secrets")).toThrow(
       "Luma path cannot contain path traversal",
     );
+    expect(() => validateLumaPath("/v1/%2e%2e/secrets")).toThrow(
+      "Luma path cannot contain path traversal",
+    );
   });
 
   test("formatLumaResult pretty prints JSON responses for MCP text content", () => {
@@ -119,3 +140,11 @@ describe("Luma API helpers", () => {
     );
   });
 });
+
+function makeRequest(input: string | URL | Request, init?: RequestInit): Request {
+  if (input instanceof Request) {
+    return new Request(input, init);
+  }
+
+  return new Request(input.toString(), init);
+}

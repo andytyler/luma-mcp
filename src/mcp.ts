@@ -1,12 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import {
-  lumaRequest,
-  validateLumaPath,
-  type Fetcher,
-  type QueryParams,
-} from "./luma-api";
+import { lumaRequest, validateLumaPath, type Fetcher, type QueryParams } from "./luma-api";
 import {
   getLumaAuthProps,
   hasRequiredScope,
@@ -14,8 +9,8 @@ import {
   makeToolError,
   makeToolResult,
   type AuthContextLike,
-  type LumaScope,
   type LumaAuthProps,
+  type LumaScope,
 } from "./mcp-helpers";
 
 export { getLumaAuthProps, LUMA_TOOL_NAMES, makeToolError, makeToolResult };
@@ -30,10 +25,7 @@ type ToolExtra = {
 };
 
 const eventId = z.string().min(1).describe("Luma event ID, usually starting with evt-");
-const isoDateTime = z
-  .string()
-  .datetime({ offset: true })
-  .describe("ISO 8601 date-time, for example 2026-05-18T19:00:00.000Z");
+const isoDateTime = z.string().datetime({ offset: true }).describe("ISO 8601 date-time, for example 2026-05-18T19:00:00.000Z");
 
 const optionalJsonObject = z.record(z.unknown()).optional();
 const anyJsonObject = z.record(z.unknown());
@@ -52,6 +44,10 @@ export function createLumaMcpServer(fetcher: Fetcher = fetch): McpServer {
   const server = new McpServer({
     name: "luma-mcp",
     version: "0.1.0",
+    description: "Luma MCP Server",
+    websiteUrl: "https://luma.com",
+    icons: [{ src: "https://luma.com/favicon.ico", mimeType: "image/x-icon" }],
+    title: "Luma MCP Server",
   });
 
   server.registerTool(
@@ -60,16 +56,14 @@ export function createLumaMcpServer(fetcher: Fetcher = fetch): McpServer {
       title: "Get Luma Calendar",
       description: "Get information about the Luma calendar attached to the authorized API key.",
     },
-    async (extra) =>
-      callLuma({ path: "/v1/calendar/get" }, fetcher, extra, "luma.events.read"),
+    async (extra) => callLuma({ path: "/v1/calendar/get" }, fetcher, extra, "luma.events.read"),
   );
 
   server.registerTool(
     "luma_list_events",
     {
       title: "List Luma Events",
-      description:
-        "List events managed by the authorized Luma calendar. Supports pagination and basic filters.",
+      description: "List events managed by the authorized Luma calendar. Supports pagination and basic filters.",
       inputSchema: {
         before: isoDateTime.optional(),
         after: isoDateTime.optional(),
@@ -77,9 +71,7 @@ export function createLumaMcpServer(fetcher: Fetcher = fetch): McpServer {
         pagination_limit: z.number().int().positive().max(100).optional(),
         platforms: z.array(z.enum(["luma", "external"])).optional(),
         sort_column: z.enum(["start_at"]).optional(),
-        sort_direction: z
-          .enum(["asc", "desc", "asc nulls last", "desc nulls last"])
-          .optional(),
+        sort_direction: z.enum(["asc", "desc", "asc nulls last", "desc nulls last"]).optional(),
         status: z.enum(["approved", "pending"]).optional(),
       },
     },
@@ -192,8 +184,7 @@ export function createLumaMcpServer(fetcher: Fetcher = fetch): McpServer {
     "luma_add_guests",
     {
       title: "Add Luma Guests",
-      description:
-        "Add guests to a Luma event with status Going. Optionally assign ticket details.",
+      description: "Add guests to a Luma event with status Going. Optionally assign ticket details.",
       inputSchema: {
         event_id: eventId,
         guests: guestList,
@@ -242,8 +233,7 @@ export function createLumaMcpServer(fetcher: Fetcher = fetch): McpServer {
     "luma_update_guest_status",
     {
       title: "Update Luma Guest Status",
-      description:
-        "Update a guest registration status. Use Luma's accepted identifiers and status values.",
+      description: "Update a guest registration status. Use Luma's accepted identifiers and status values.",
       inputSchema: {
         guest: z
           .object({
@@ -273,8 +263,7 @@ export function createLumaMcpServer(fetcher: Fetcher = fetch): McpServer {
     "luma_get_guest",
     {
       title: "Get Luma Guest",
-      description:
-        "Get detailed information for an event guest by guest ID, ticket key, guest key, or email.",
+      description: "Get detailed information for an event guest by guest ID, ticket key, guest key, or email.",
       inputSchema: {
         event_id: eventId,
         id: z.string().min(1),
@@ -514,13 +503,7 @@ export function createLumaMcpServer(fetcher: Fetcher = fetch): McpServer {
       title: "List Luma Event Tags",
       description: "List event tags available on the authorized Luma calendar.",
     },
-    async (extra) =>
-      callLuma(
-        { path: "/v1/calendar/event-tags/list" },
-        fetcher,
-        extra,
-        "luma.events.read",
-      ),
+    async (extra) => callLuma({ path: "/v1/calendar/event-tags/list" }, fetcher, extra, "luma.events.read"),
   );
 
   server.registerTool(
@@ -530,10 +513,7 @@ export function createLumaMcpServer(fetcher: Fetcher = fetch): McpServer {
       description: "Create an event tag on the authorized Luma calendar.",
       inputSchema: {
         name: z.string().min(1),
-        color: z
-          .enum(["cranberry", "barney", "red", "green", "blue", "purple", "yellow", "orange"])
-          .nullable()
-          .optional(),
+        color: z.enum(["cranberry", "barney", "red", "green", "blue", "purple", "yellow", "orange"]).nullable().optional(),
       },
     },
     async (args, extra) =>
@@ -595,6 +575,7 @@ export function createLumaMcpServer(fetcher: Fetcher = fetch): McpServer {
   );
 
   server.registerTool(
+    
     "luma_create_host",
     {
       title: "Create Luma Event Host",
@@ -710,11 +691,7 @@ async function callLuma(
 }
 
 function cleanObject<T extends JsonObject>(input: T): JsonObject {
-  return Object.fromEntries(
-    Object.entries(input).filter(
-      ([, value]) => value !== undefined && value !== null && value !== "",
-    ),
-  );
+  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined && value !== null && value !== ""));
 }
 
 function cleanQuery<T extends JsonObject>(input: T): QueryParams {

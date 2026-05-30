@@ -1,8 +1,20 @@
 # Luma MCP
 
-Remote MCP server for Luma, deployable on Cloudflare Workers or Railway.
+Remote MCP server for Luma, hosted on Railway.
 
-The server exposes `/mcp` as an OAuth-protected Streamable HTTP MCP endpoint. During OAuth authorization, a user pastes a Luma calendar API key. The Cloudflare OAuth provider stores that key only inside encrypted OAuth props, then passes it to MCP tool calls for that user.
+The server exposes `/mcp` as an OAuth-protected Streamable HTTP MCP endpoint.
+During authorization, a user pastes a Luma API key. The Railway runtime validates
+that key with Luma, encrypts it, and stores the OAuth client, token, and grant
+state in SQLite.
+
+## What It Provides
+
+- A Railway/Bun HTTP server in `src/railway.ts`
+- OAuth discovery, client registration, token exchange, refresh, and revoke endpoints
+- Encrypted per-user Luma API key storage in SQLite
+- A `/health` endpoint for Railway health checks
+- MCP tools for Luma calendar, event, guest, ticket, coupon, tag, upload, and host APIs
+- `luma_request`, a safe generic escape hatch for any relative `/v1/` Luma `GET` or `POST` endpoint
 
 ## Tools
 
@@ -31,9 +43,7 @@ The server exposes `/mcp` as an OAuth-protected Streamable HTTP MCP endpoint. Du
 - `luma_update_host`
 - `luma_request`
 
-`luma_request` is a safe generic escape hatch for Luma endpoints not yet wrapped by a named tool. It only accepts relative `/v1/` paths and `GET` or `POST`.
-
-## Setup
+## Local Development
 
 Install dependencies:
 
@@ -41,61 +51,69 @@ Install dependencies:
 bun install
 ```
 
-Create the OAuth KV namespace:
+Run the server:
 
 ```sh
-bunx wrangler kv namespace create OAUTH_KV
+APP_SECRET="replace-with-a-random-32-character-secret" bun run dev
 ```
 
-Copy the returned namespace ID into `wrangler.jsonc`:
+Local OAuth data is stored in `./data/luma-mcp.sqlite` unless `MCP_STORAGE_PATH`
+is set.
 
-```jsonc
-"kv_namespaces": [
-  {
-    "binding": "OAUTH_KV",
-    "id": "your-kv-namespace-id"
-  }
-]
-```
-
-Run locally:
-
-```sh
-bun run dev
-```
-
-Deploy:
-
-```sh
-bun run deploy
-```
-
-After deployment, the MCP endpoint is:
+Useful local URLs:
 
 ```text
-https://<worker-name>.<account-subdomain>.workers.dev/mcp
+http://localhost:3000/
+http://localhost:3000/health
+http://localhost:3000/mcp
 ```
 
-## Railway Production
+Debug with MCP Inspector over Streamable HTTP:
 
-Railway runs the Bun entrypoint in `src/railway.ts`. It exposes the same `/mcp`
-Streamable HTTP endpoint with OAuth, plus `/health` for Railway health checks.
+```sh
+APP_SECRET="replace-with-a-random-32-character-secret" bun run dev   # terminal 1
+bun run inspect                                                      # terminal 2
+```
+
+Inspector connects to `http://localhost:3000/mcp`. Complete OAuth in the inspector UI and paste your Luma API key on the authorize page when prompted. Tool calls then use the bearer token from that flow.
+
+## Railway Deployment
+
+Railway uses `railway.toml`:
+
+```toml
+[build]
+builder = "RAILPACK"
+
+[deploy]
+startCommand = "bun run start"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ALWAYS"
+```
 
 Required Railway variables:
 
 ```sh
 APP_SECRET=<random 32+ character secret>
+MCP_BASE_URL=https://<service-domain>
 ```
 
-Recommended Railway volume:
+Railway also provides `RAILWAY_PUBLIC_DOMAIN`, and the server will use it when
+`MCP_BASE_URL` is not set. Set `MCP_BASE_URL` explicitly for custom domains.
+
+Required Railway volume:
 
 ```sh
 railway volume add --mount-path /data
 ```
 
-When a Railway volume is attached, the OAuth client, token, and encrypted Luma
-API-key props database is stored at `$RAILWAY_VOLUME_MOUNT_PATH/luma-mcp.sqlite`.
-Without a volume, local development falls back to `./data/luma-mcp.sqlite`.
+The server stores OAuth clients, tokens, refresh tokens, and encrypted Luma API
+keys in SQLite. In production, mount a volume so those grants survive restarts
+and redeploys. With the volume above, data is stored at
+`$RAILWAY_VOLUME_MOUNT_PATH/luma-mcp.sqlite`; you can override that with
+`MCP_STORAGE_PATH`. Local development without a volume falls back to
+`./data/luma-mcp.sqlite`.
 
 Deploy from the linked Railway service:
 
@@ -117,24 +135,26 @@ Use the `/mcp` URL directly in clients that support remote MCP with OAuth.
 For MCP clients that only accept stdio commands, use `mcp-remote`:
 
 ```sh
-npx mcp-remote https://<worker-name>.<account-subdomain>.workers.dev/mcp
+npx mcp-remote https://<service-domain>/mcp
 ```
 
 Example Codex registration:
 
 ```sh
-codex mcp add luma -- npx mcp-remote https://<worker-name>.<account-subdomain>.workers.dev/mcp
+codex mcp add luma -- npx mcp-remote https://<service-domain>/mcp
 ```
 
 ## Luma Auth Model
 
-Luma's public API currently uses API keys. Each person connecting this MCP server needs a Luma API key for the calendar or organization they want to manage. The authorize page validates the key with low-cost calendar and organization probes before completing OAuth.
+Luma's public API uses API keys. Each person connecting this MCP server needs a
+Luma API key for the calendar or organization they want to manage.
 
-Luma API keys are scoped. A user can reconnect the MCP server to rotate or replace the key for a client.
+The authorize page validates the key with low-cost calendar and organization
+probes before completing OAuth. The raw API key is encrypted before it is stored
+in SQLite, and only a hash is kept in non-secret metadata.
 
 ## Verification
 
 ```sh
 bun run check
-bunx wrangler deploy --dry-run
 ```

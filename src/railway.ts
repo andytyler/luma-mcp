@@ -1,5 +1,6 @@
 import { bearerError, jsonResponse, RailwayOAuthServer } from "./railway-oauth";
 import { handleMcpRequest } from "./mcp-http";
+import { corsHeaders, publicBaseUrl } from "./hosting";
 
 const DEFAULT_STORAGE_PATH = "./data/luma-mcp.sqlite";
 const DEFAULT_HOST = "0.0.0.0";
@@ -40,9 +41,17 @@ console.log(`Luma MCP listening on ${server.hostname}:${server.port}`);
 async function route(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const baseUrl = publicBaseUrl(request);
+  const cors = corsHeaders(request);
+
+  if (request.method === "OPTIONS" && isCorsRoute(url.pathname)) {
+    return new Response(null, {
+      status: 204,
+      headers: cors,
+    });
+  }
 
   if (request.method === "GET" && url.pathname === "/health") {
-    return jsonResponse(oauth.health());
+    return jsonResponse(oauth.health(), 200, cors);
   }
 
   if (request.method === "GET" && url.pathname === "/") {
@@ -54,7 +63,7 @@ async function route(request: Request): Promise<Response> {
     (url.pathname === "/.well-known/oauth-authorization-server" ||
       url.pathname === "/.well-known/openid-configuration")
   ) {
-    return jsonResponse(oauth.metadata(baseUrl));
+    return jsonResponse(oauth.metadata(baseUrl), 200, cors);
   }
 
   if (
@@ -62,7 +71,7 @@ async function route(request: Request): Promise<Response> {
     (url.pathname === "/.well-known/oauth-protected-resource" ||
       url.pathname === "/.well-known/oauth-protected-resource/mcp")
   ) {
-    return jsonResponse(oauth.protectedResourceMetadata(baseUrl));
+    return jsonResponse(oauth.protectedResourceMetadata(baseUrl), 200, cors);
   }
 
   if (url.pathname === "/authorize" && (request.method === "GET" || request.method === "POST")) {
@@ -70,23 +79,23 @@ async function route(request: Request): Promise<Response> {
   }
 
   if (url.pathname === "/oauth/register" && request.method === "POST") {
-    return oauth.registerClient(request);
+    return withHeaders(await oauth.registerClient(request), cors);
   }
 
-  if (url.pathname === "/oauth/token" && request.method === "POST") {
-    return oauth.token(request);
+  if ((url.pathname === "/oauth/token" || url.pathname === "/token") && request.method === "POST") {
+    return withHeaders(await oauth.token(request), cors);
   }
 
   if (url.pathname === "/oauth/revoke" && request.method === "POST") {
-    return oauth.revoke(request);
+    return withHeaders(await oauth.revoke(request), cors);
   }
 
   if (url.pathname === "/mcp") {
-    const authInfo = await authInfoFromRequest(request);
+    const authInfo = await authInfoFromRequest(request, new URL("/mcp", baseUrl));
     if (!authInfo.ok) {
-      return bearerError(baseUrl, authInfo.message);
+      return withHeaders(bearerError(baseUrl, authInfo.message), cors);
     }
-    return handleMcpRequest(request, authInfo.value.extra);
+    return withHeaders(await handleMcpRequest(request, authInfo.value.extra), cors);
   }
 
   return new Response("Not found", {
@@ -98,8 +107,40 @@ async function route(request: Request): Promise<Response> {
   });
 }
 
+function isCorsRoute(pathname: string): boolean {
+  return (
+    pathname === "/mcp" ||
+    pathname === "/oauth/register" ||
+    pathname === "/oauth/token" ||
+    pathname === "/token" ||
+    pathname === "/oauth/revoke" ||
+    pathname === "/.well-known/oauth-authorization-server" ||
+    pathname === "/.well-known/openid-configuration" ||
+    pathname === "/.well-known/oauth-protected-resource" ||
+    pathname === "/.well-known/oauth-protected-resource/mcp"
+  );
+}
+
+function withHeaders(response: Response, headers: Record<string, string>): Response {
+  if (Object.keys(headers).length === 0) {
+    return response;
+  }
+
+  const nextHeaders = new Headers(response.headers);
+  for (const [name, value] of Object.entries(headers)) {
+    nextHeaders.set(name, value);
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: nextHeaders,
+  });
+}
+
 async function authInfoFromRequest(
   request: Request,
+  expectedResource: URL,
 ): Promise<
   | { ok: true; value: Awaited<ReturnType<RailwayOAuthServer["verifyAccessToken"]>> }
   | { ok: false; message: string }
@@ -111,26 +152,13 @@ async function authInfoFromRequest(
   }
 
   try {
-    return { ok: true, value: await oauth.verifyAccessToken(match[1]) };
+    return { ok: true, value: await oauth.verifyAccessToken(match[1], expectedResource) };
   } catch (error) {
     return {
       ok: false,
       message: error instanceof Error ? error.message : "Invalid bearer token.",
     };
   }
-}
-
-function publicBaseUrl(request: Request): URL {
-  if (process.env.MCP_BASE_URL) {
-    return new URL(process.env.MCP_BASE_URL);
-  }
-
-  const requestUrl = new URL(request.url);
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const forwardedProto = request.headers.get("x-forwarded-proto");
-  const host = forwardedHost ?? request.headers.get("host") ?? requestUrl.host;
-  const proto = forwardedProto ?? requestUrl.protocol.replace(":", "");
-  return new URL(`${proto}://${host}`);
 }
 
 function homePage(baseUrl: URL): Response {
@@ -146,7 +174,7 @@ ${new URL("/.well-known/oauth-authorization-server", baseUrl).href}
 Health:
 ${new URL("/health", baseUrl).href}
 
-Use this server from MCP clients that support remote MCP with OAuth. During authorization, paste a Luma calendar API key from a Luma Plus calendar.
+Use this server from MCP clients that support remote MCP with OAuth. During authorization, paste a Luma calendar or organization API key.
 `;
 
   return new Response(body, {
