@@ -238,7 +238,7 @@ export class RailwayOAuthServer {
       );
     }
 
-    return this.renderAuthorizeForm(client, params.value, baseUrl);
+    return this.renderAuthorizeForm(client, params.value);
   }
 
   async token(request: Request): Promise<Response> {
@@ -374,7 +374,6 @@ export class RailwayOAuthServer {
   private async renderAuthorizeForm(
     client: RegisteredClient,
     params: AuthorizationParams,
-    baseUrl: URL,
   ): Promise<Response> {
     const csrfToken = crypto.randomUUID();
     const scriptNonce = base64Url(crypto.getRandomValues(new Uint8Array(16)));
@@ -397,7 +396,6 @@ export class RailwayOAuthServer {
     });
 
     return htmlResponse(body, 200, {
-      formActionOrigin: isLoopbackHost(baseUrl.hostname) ? undefined : baseUrl.origin,
       scriptNonce,
     });
   }
@@ -804,7 +802,7 @@ export function bearerError(baseUrl: URL, description = "Missing or invalid acce
 function htmlResponse(
   html: string,
   status = 200,
-  options: { formActionOrigin?: string; scriptNonce?: string } = {},
+  options: { scriptNonce?: string } = {},
 ): Response {
   const contentSecurityPolicy = [
     "default-src 'none'",
@@ -813,11 +811,6 @@ function htmlResponse(
     "frame-ancestors 'none'",
     "base-uri 'self'",
   ];
-  if (options.formActionOrigin) {
-    contentSecurityPolicy.push(
-      ["form-action", "'self'", options.formActionOrigin].filter(Boolean).join(" "),
-    );
-  }
   if (options.scriptNonce) {
     contentSecurityPolicy.push(`script-src 'nonce-${options.scriptNonce}'`);
   }
@@ -1002,8 +995,4 @@ function canParseUrl(value: string): boolean {
   } catch {
     return false;
   }
-}
-
-function isLoopbackHost(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
 }

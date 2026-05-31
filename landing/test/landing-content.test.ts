@@ -3,9 +3,11 @@ import { describe, expect, test } from "bun:test";
 const app = await Bun.file(new URL("../src/App.svelte", import.meta.url)).text();
 const appCss = await Bun.file(new URL("../src/app.css", import.meta.url)).text();
 const capabilities = await Bun.file(new URL("../src/lib/components/Capabilities.svelte", import.meta.url)).text();
+const caddyfile = await Bun.file(new URL("../Caddyfile", import.meta.url)).text();
 const install = await Bun.file(new URL("../src/lib/components/Install.svelte", import.meta.url)).text();
 const index = await Bun.file(new URL("../index.html", import.meta.url)).text();
 const nav = await Bun.file(new URL("../src/lib/components/Nav.svelte", import.meta.url)).text();
+const railwayConfig = await Bun.file(new URL("../railway.toml", import.meta.url)).text();
 const site = await Bun.file(new URL("../src/lib/site.ts", import.meta.url)).text();
 
 describe("landing page content", () => {
@@ -47,5 +49,21 @@ describe("landing page content", () => {
     expect(index).toContain('property="og:title"');
     expect(index).toContain('property="og:image"');
     expect(index).toContain('name="twitter:card"');
+  });
+
+  test("landing metadata uses the landing domain while install snippets keep the hosted MCP endpoint", () => {
+    expect(index).toContain('property="og:url" content="https://luma-mcp.ajt.dev/"');
+    expect(index).toContain('content="https://luma-mcp.ajt.dev/og.svg"');
+    expect(site).toContain('mcpBaseUrl: "https://luma-mcp-production.up.railway.app"');
+    expect(site).not.toContain('mcpBaseUrl: "https://luma-mcp.ajt.dev"');
+  });
+
+  test("Caddy serves health before the SPA fallback", () => {
+    expect(caddyfile).toContain("route {");
+    expect(caddyfile.indexOf('respond /health "ok" 200')).toBeLessThan(caddyfile.indexOf("try_files {path} /index.html"));
+  });
+
+  test("Railway config does not skip path-as-root landing deploys", () => {
+    expect(railwayConfig).not.toContain('watchPatterns = ["/landing/**"]');
   });
 });

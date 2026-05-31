@@ -4,7 +4,6 @@
 
 [build]
 builder = "DOCKERFILE"
-watchPatterns = ["/landing/**"]
 
 [deploy]
 healthcheckPath = "/health"

@@ -129,7 +129,7 @@ describe("Railway OAuth runtime", () => {
     expect(authInfo.resource?.href).toBe("https://mcp.example.com/mcp");
   });
 
-  test("authorize form CSP allows posting back to the public server origin", async () => {
+  test("public authorize form CSP does not constrain form-action", async () => {
     const oauth = makeOAuth();
     const challenge = await pkceChallenge(verifier);
     const client = await registerPublicClient(oauth);
@@ -139,9 +139,7 @@ describe("Railway OAuth runtime", () => {
       baseUrl,
     );
 
-    expect(response.headers.get("content-security-policy")).toContain(
-      "form-action 'self' https://mcp.example.com",
-    );
+    expect(response.headers.get("content-security-policy")).not.toContain("form-action");
   });
 
   test("local authorize form CSP does not constrain form-action for inspector redirects", async () => {

@@ -83,9 +83,9 @@ bun run inspect                                                      # terminal 
 Inspector connects to `http://localhost:3000/mcp`. Complete OAuth in the inspector UI and paste your Luma API key on the authorize page when prompted. Tool calls then use the bearer token from that flow.
 
 For local Inspector compatibility, browser origins are reflected on `/mcp`,
-OAuth register/token/revoke, and well-known discovery routes. Local loopback
-authorize pages intentionally omit `form-action` CSP because Inspector submits
-from its own localhost origin during the OAuth flow.
+OAuth register/token/revoke, and well-known discovery routes. Authorize pages
+intentionally omit `form-action` CSP so browser-based OAuth flows can submit
+the Luma API key form back to the server origin chosen by the client.
 
 ## Railway Deployment
 
@@ -142,6 +142,34 @@ After deployment, generate a public Railway domain and use:
 
 ```text
 https://<service-domain>/mcp
+```
+
+## Landing Page Deployment
+
+The landing page is a separate Railway service from the same repository. Keep
+the MCP service on the repo root with `/railway.toml`; do not repoint the MCP
+service to `luma-mcp.ajt.dev` unless you intend to move the MCP endpoint.
+
+Create a second Railway service and configure it with:
+
+```text
+Root Directory: /landing
+Config File Path: /landing/railway.toml
+Custom Domain: luma-mcp.ajt.dev
+```
+
+The landing service uses `landing/Dockerfile`, builds the Vite app with Bun,
+and serves the static `dist` directory with Caddy on Railway's `$PORT`. It has
+its own `/health` endpoint in `landing/Caddyfile`.
+
+Attach `luma-mcp.ajt.dev` only to the landing service. Add the `CNAME` and
+`TXT` records Railway shows in the custom-domain flow; the `TXT` record is
+required for Railway to route the domain after DNS resolves.
+
+The hosted install snippets still point at the current MCP endpoint:
+
+```text
+https://luma-mcp-production.up.railway.app/mcp
 ```
 
 ## Client Usage

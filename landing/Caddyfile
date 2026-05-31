@@ -9,10 +9,9 @@
 	root * /srv
 	encode gzip
 
-	handle /health {
-		respond "ok" 200
+	route {
+		respond /health "ok" 200
+		try_files {path} /index.html
+		file_server
 	}
-
-	try_files {path} /index.html
-	file_server
 }
