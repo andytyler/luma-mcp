@@ -3,15 +3,17 @@
 
   const linkClass = "font-bold text-foreground hover:text-ring hover:underline hover:underline-offset-3 inline-flex items-center gap-1.5";
   const githubIcon = "https://www.google.com/s2/favicons?sz=64&domain=github.com";
-  const andyIcon = "https://www.google.com/s2/favicons?sz=64&domain=ajt.dev";
+  const ajtIcon = "https://www.google.com/s2/favicons?sz=64&domain=ajt.dev";
 </script>
 
 <footer class="grid justify-items-center gap-2 text-center text-[13px] leading-[1.4] text-muted-foreground">
   <div class="flex flex-wrap items-center justify-center gap-2">
     <span>{SITE.footer.lead}</span>
+    <a class={linkClass} href={SITE.footer.xUrl} target="_blank" rel="noreferrer">{SITE.footer.name}</a>
+    <span aria-hidden="true">·</span>
     <a class={linkClass} href={SITE.footer.url} target="_blank" rel="noreferrer">
-      <img src={andyIcon} alt="" class="size-3.5 rounded-sm object-cover ring-1 ring-border/50" aria-hidden="true" />
-      {SITE.footer.name}
+      <img src={ajtIcon} alt="" class="size-3.5 rounded-sm object-cover ring-1 ring-border/50" aria-hidden="true" />
+      ajt.dev
     </a>
     <span aria-hidden="true">·</span>
     <a class={linkClass} href={ENDPOINT}>

@@ -7,7 +7,7 @@ export const SITE = {
   endpointPath: "/mcp",
   githubUrl: "https://github.com/andytyler/luma-mcp",
   lumaApiDocsUrl: "https://docs.lu.ma/reference/getting-started-with-your-api",
-  footer: { lead: "Created by", name: "Andy Tyler", program: "Codex Community Program", url: "https://ajt.dev" },
+  footer: { lead: "Created by", name: "Andy Tyler", program: "MIT License", url: "https://ajt.dev", xUrl: "https://x.com/andy_ajt" },
 };
 
 export const ENDPOINT = new URL(SITE.endpointPath, SITE.mcpBaseUrl).href;
