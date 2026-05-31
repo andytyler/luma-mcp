@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Luma MCP</title>
+  <desc id="desc">Install Luma MCP for AI clients.</desc>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="0%" r="85%">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".6" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#f1f5f9"/>
+    </radialGradient>
+    <filter id="sparkleShadow" x="-25%" y="-18%" width="150%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="12" flood-color="#111827" flood-opacity=".16"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="2" flood-color="#111827" flood-opacity=".16"/>
+    </filter>
+    <clipPath id="sparkle">
+      <path d="M132 52C138.3 97.1 170.2 129 215 135C170.2 141.3 138.3 173.2 132 218C126 173.2 94.1 141.3 49 135C94.1 129 126 97.1 132 52Z"/>
+    </clipPath>
+    <linearGradient id="base" x1="77" y1="66" x2="184" y2="203" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f9e8ff"/>
+      <stop offset=".2" stop-color="#76f4ff"/>
+      <stop offset=".43" stop-color="#fff174"/>
+      <stop offset=".62" stop-color="#ff4aac"/>
+      <stop offset=".82" stop-color="#141821"/>
+      <stop offset="1" stop-color="#090b12"/>
+    </linearGradient>
+    <radialGradient id="hot" cx="53%" cy="48%" r="42%">
+      <stop stop-color="#fffdf1"/>
+      <stop offset=".38" stop-color="#ffe66f"/>
+      <stop offset=".68" stop-color="#ff4aa2"/>
+      <stop offset="1" stop-color="#6b24ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cyan" x1="100" y1="60" x2="170" y2="145" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset=".42" stop-color="#55f7ff"/>
+      <stop offset="1" stop-color="#2353ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="dark" x1="108" y1="126" x2="158" y2="218" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1a1830" stop-opacity=".15"/>
+      <stop offset=".54" stop-color="#161a25"/>
+      <stop offset="1" stop-color="#05060a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <g transform="translate(62 58)" filter="url(#sparkleShadow)">
+    <g clip-path="url(#sparkle)">
+      <rect x="49" y="52" width="166" height="166" fill="url(#base)"/>
+      <path d="M49 135C86.2 127.2 111.4 109.2 132 52C136.2 94 145.8 119.2 215 135C170.6 133.8 139.4 126.6 105.8 101.4C87.8 118.2 69.8 129 49 135Z" fill="url(#cyan)" opacity=".9"/>
+      <path d="M75.4 135.6C101.8 117.6 125.8 110.4 148.6 115.2C169 120 188.2 129.6 215 135C176.6 141.6 150.2 154.8 132 218C124.2 173.6 107.4 150.8 75.4 135.6Z" fill="url(#hot)" opacity=".92"/>
+      <path d="M101.8 123.6C130.6 133.2 157 139.2 189.4 135.6C164.2 151.2 146.2 174 132 218C123 174.8 112.2 148.4 101.8 123.6Z" fill="url(#dark)" opacity=".92"/>
+      <path d="M132 52C136.2 90.4 147 116.8 171 128.8C149.4 125.2 131.4 115.6 112.2 101.4C121.8 81 129 61.6 132 52Z" fill="#fff" opacity=".48"/>
+      <path d="M49 135C82.6 130.8 103 127.2 122.2 120C106.6 133.2 86.2 139.2 49 135Z" fill="#fff" opacity=".58"/>
+      <path d="M215 135C177.8 141.6 151.4 156 132 218C138.6 170 153 146 178.2 135.2C190.2 134.4 202.2 134.4 215 135Z" fill="#0b0c12" opacity=".5"/>
+    </g>
+    <path d="M132 52C138.3 97.1 170.2 129 215 135C170.2 141.3 138.3 173.2 132 218C126 173.2 94.1 141.3 49 135C94.1 129 126 97.1 132 52Z" fill="none" stroke="#21182e" stroke-opacity=".42" stroke-width="2"/>
+  </g>
+  <text x="78" y="328" fill="#0f172a" font-family="Instrument Sans, Arial, sans-serif" font-size="92" font-weight="700">Luma MCP</text>
+  <text x="82" y="402" fill="#5f6b7a" font-family="Instrument Sans, Arial, sans-serif" font-size="34" font-weight="500">OAuth-protected MCP for Luma events.</text>
+  <text x="82" y="478" fill="#17202a" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="30" font-weight="700">https://luma-mcp-production.up.railway.app/mcp</text>
+  <rect x="82" y="536" width="174" height="52" rx="26" fill="#111"/>
+  <text x="118" y="571" fill="#fff" font-family="Instrument Sans, Arial, sans-serif" font-size="22" font-weight="700">Install</text>
+  <rect x="282" y="536" width="168" height="52" rx="26" fill="#fff" stroke="#d7dfe8"/>
+  <text x="322" y="571" fill="#111" font-family="Instrument Sans, Arial, sans-serif" font-size="22" font-weight="700">GitHub</text>
+</svg>

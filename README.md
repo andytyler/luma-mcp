@@ -58,7 +58,9 @@ APP_SECRET="replace-with-a-random-32-character-secret" bun run dev
 ```
 
 Local OAuth data is stored in `./data/luma-mcp.sqlite` unless `MCP_STORAGE_PATH`
-is set.
+or `RAILWAY_VOLUME_MOUNT_PATH` is set. Storage path resolution is
+`MCP_STORAGE_PATH`, then `$RAILWAY_VOLUME_MOUNT_PATH/luma-mcp.sqlite`, then
+`./data/luma-mcp.sqlite`.
 
 Useful local URLs:
 
@@ -68,6 +70,9 @@ http://localhost:3000/health
 http://localhost:3000/mcp
 ```
 
+By default the server listens on `0.0.0.0:3000`; override with `HOST` and
+`PORT`. If you change `PORT`, update `inspector.json` too.
+
 Debug with MCP Inspector over Streamable HTTP:
 
 ```sh
@@ -76,6 +81,11 @@ bun run inspect                                                      # terminal 
 ```
 
 Inspector connects to `http://localhost:3000/mcp`. Complete OAuth in the inspector UI and paste your Luma API key on the authorize page when prompted. Tool calls then use the bearer token from that flow.
+
+For local Inspector compatibility, browser origins are reflected on `/mcp`,
+OAuth register/token/revoke, and well-known discovery routes. Local loopback
+authorize pages intentionally omit `form-action` CSP because Inspector submits
+from its own localhost origin during the OAuth flow.
 
 ## Railway Deployment
 
@@ -92,17 +102,23 @@ healthcheckTimeout = 300
 restartPolicyType = "ALWAYS"
 ```
 
-Required Railway variables:
+Required Railway variable:
 
 ```sh
 APP_SECRET=<random 32+ character secret>
-MCP_BASE_URL=https://<service-domain>
 ```
 
-Railway also provides `RAILWAY_PUBLIC_DOMAIN`, and the server will use it when
+Optional Railway variable:
+
+```sh
+MCP_BASE_URL=https://<custom-domain>
+```
+
+Railway provides `RAILWAY_PUBLIC_DOMAIN`, and the server will use it when
 `MCP_BASE_URL` is not set. Set `MCP_BASE_URL` explicitly for custom domains.
 
-Required Railway volume:
+Production Railway volume, required for OAuth grants to survive restarts and
+redeploys:
 
 ```sh
 railway volume add --mount-path /data
@@ -112,7 +128,7 @@ The server stores OAuth clients, tokens, refresh tokens, and encrypted Luma API
 keys in SQLite. In production, mount a volume so those grants survive restarts
 and redeploys. With the volume above, data is stored at
 `$RAILWAY_VOLUME_MOUNT_PATH/luma-mcp.sqlite`; you can override that with
-`MCP_STORAGE_PATH`. Local development without a volume falls back to
+`MCP_STORAGE_PATH`. Without either variable, the server falls back to
 `./data/luma-mcp.sqlite`.
 
 Deploy from the linked Railway service:
@@ -151,7 +167,8 @@ Luma API key for the calendar or organization they want to manage.
 
 The authorize page validates the key with low-cost calendar and organization
 probes before completing OAuth. The raw API key is encrypted before it is stored
-in SQLite, and only a hash is kept in non-secret metadata.
+in SQLite. The API key and its SHA-256 hash are stored only inside encrypted
+OAuth token props; the raw key is never written outside that encrypted value.
 
 ## Verification
 

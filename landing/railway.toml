@@ -1,0 +1,12 @@
+# Railway service settings:
+# - Root Directory: /landing
+# - Config File Path: /landing/railway.toml
+
+[build]
+builder = "DOCKERFILE"
+watchPatterns = ["/landing/**"]
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ALWAYS"

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 225 225" role="img" aria-labelledby="title desc">
+  <title id="title">Luma plain mark</title>
+  <desc id="desc">A black four-point sparkle on a white square.</desc>
+  <rect width="225" height="225" fill="#fff"/>
+  <path d="M112.5 43C117.8 80.6 144.4 107.2 182 112.5C144.4 117.8 117.8 144.4 112.5 182C107.2 144.4 80.6 117.8 43 112.5C80.6 107.2 107.2 80.6 112.5 43Z" fill="#282828"/>
+</svg>

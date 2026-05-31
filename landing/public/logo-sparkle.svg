@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 225 225" role="img" aria-labelledby="title desc">
+  <title id="title">Luma sparkle mark</title>
+  <desc id="desc">A prismatic four-point sparkle on a white square.</desc>
+  <defs>
+    <filter id="shadow" x="-25%" y="-18%" width="150%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="14" stdDeviation="10" flood-color="#111827" flood-opacity=".18"/>
+      <feDropShadow dx="0" dy="3" stdDeviation="2" flood-color="#111827" flood-opacity=".18"/>
+    </filter>
+    <clipPath id="sparkle">
+      <path d="M112.5 43C117.8 80.6 144.4 107.2 182 112.5C144.4 117.8 117.8 144.4 112.5 182C107.2 144.4 80.6 117.8 43 112.5C80.6 107.2 107.2 80.6 112.5 43Z"/>
+    </clipPath>
+    <linearGradient id="base" x1="67" y1="58" x2="156" y2="172" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f9e8ff"/>
+      <stop offset=".2" stop-color="#76f4ff"/>
+      <stop offset=".43" stop-color="#fff174"/>
+      <stop offset=".62" stop-color="#ff4aac"/>
+      <stop offset=".82" stop-color="#141821"/>
+      <stop offset="1" stop-color="#090b12"/>
+    </linearGradient>
+    <radialGradient id="hot" cx="53%" cy="48%" r="42%">
+      <stop stop-color="#fffdf1"/>
+      <stop offset=".38" stop-color="#ffe66f"/>
+      <stop offset=".68" stop-color="#ff4aa2"/>
+      <stop offset="1" stop-color="#6b24ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cyan" x1="86" y1="50" x2="144" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset=".42" stop-color="#55f7ff"/>
+      <stop offset="1" stop-color="#2353ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="dark" x1="92" y1="105" x2="134" y2="181" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1a1830" stop-opacity=".15"/>
+      <stop offset=".54" stop-color="#161a25"/>
+      <stop offset="1" stop-color="#05060a"/>
+    </linearGradient>
+  </defs>
+  <rect width="225" height="225" fill="#fff"/>
+  <g filter="url(#shadow)">
+    <g clip-path="url(#sparkle)">
+      <rect x="43" y="43" width="139" height="139" fill="url(#base)"/>
+      <path d="M43 112.5C74 106 95 91 112.5 43C116 78 124 99 182 112.5C145 111 119 105 91 84C76 98 61 107 43 112.5Z" fill="url(#cyan)" opacity=".9"/>
+      <path d="M65 113C87 98 107 92 126 96C143 100 159 108 182 112.5C150 118 128 129 112.5 182C106 145 92 126 65 113Z" fill="url(#hot)" opacity=".92"/>
+      <path d="M87 103C111 111 133 116 160 113C139 126 124 145 112.5 182C105 146 96 124 87 103Z" fill="url(#dark)" opacity=".92"/>
+      <path d="M112.5 43C116 75 125 97 145 107C127 104 112 96 96 84C104 67 110 51 112.5 43Z" fill="#fff" opacity=".48"/>
+      <path d="M43 112.5C71 109 88 106 104 100C91 111 74 116 43 112.5Z" fill="#fff" opacity=".58"/>
+      <path d="M182 112.5C151 118 129 130 112.5 182C118 142 130 122 151 113C161 112 171 112 182 112.5Z" fill="#0b0c12" opacity=".5"/>
+    </g>
+    <path d="M112.5 43C117.8 80.6 144.4 107.2 182 112.5C144.4 117.8 117.8 144.4 112.5 182C107.2 144.4 80.6 117.8 43 112.5C80.6 107.2 107.2 80.6 112.5 43Z" fill="none" stroke="#21182e" stroke-opacity=".42" stroke-width="1.6"/>
+  </g>
+</svg>

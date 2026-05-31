@@ -575,7 +575,6 @@ export function createLumaMcpServer(fetcher: Fetcher = fetch): McpServer {
   );
 
   server.registerTool(
-    
     "luma_create_host",
     {
       title: "Create Luma Event Host",
@@ -691,7 +690,9 @@ async function callLuma(
 }
 
 function cleanObject<T extends JsonObject>(input: T): JsonObject {
-  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined && value !== null && value !== ""));
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+  );
 }
 
 function cleanQuery<T extends JsonObject>(input: T): QueryParams {
