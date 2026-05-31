@@ -1,4 +1,8 @@
 node_modules/
-.env*
+.env.local
+.env
 dist/
 data/
+/landing/.env.local
+/landing/.env
+*.env*
